@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Comedian extends Model
@@ -24,6 +25,14 @@ class Comedian extends Model
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
+
+    // ── Relationships ─────────────────────────────────────────
+
+    public function events(): BelongsToMany
+    {
+        return $this->belongsToMany(Event::class, 'event_comedian')
+            ->withTimestamps();
+    }
 
     // ── Scopes ────────────────────────────────────────────────
 

@@ -45,14 +45,21 @@ Route::middleware('auth:sanctum')->group(
 
 
 // Events routes (public)
-Route::prefix('event')->group(function () {
-    Route::get('/', [EventController::class, 'index']);
-    Route::post('/', [EventController::class, 'store']);
-    Route::get('/{id}', [EventController::class, 'show']);
-    Route::match(['post', 'put'], '/{id}', [EventController::class, 'update']);
-    Route::delete('/{id}', [EventController::class, 'destroy']);
-});
 
+
+// Make sure the event routes are inside this middleware group:
+Route::middleware('auth:sanctum')->group(function () {
+    Route::prefix('event')->group(function () {
+        Route::get('/', [EventController::class, 'index']);
+        Route::post('/', [EventController::class, 'store']);
+        Route::get('/{id}', [EventController::class, 'show']);
+        Route::match(['post', 'put'], '/{id}', [EventController::class, 'update']);
+        Route::delete('/{id}', [EventController::class, 'destroy']);
+    });
+
+
+    
+});
 
 
 // Bookings routes (public)
@@ -72,6 +79,6 @@ Route::prefix('comedians')->group(function () {
     Route::get('/', [ComediansController::class, 'index']);
     Route::post('/', [ComediansController::class, 'store']);
     Route::get('/{id}', [ComediansController::class, 'show']);
-    Route::post('/{id}', [ComediansController::class, 'update']); // POST for form-data with images
+    Route::match(['post', 'put'], '/{id}', [ComediansController::class, 'update']);
     Route::delete('/{id}', [ComediansController::class, 'destroy']);
 });

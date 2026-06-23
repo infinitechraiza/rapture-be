@@ -3,25 +3,29 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
 use App\Models\Event;
+use App\Models\Comedian;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class EventController extends Controller
 {
-    // ── GET /api/event ─────────────────────────────────────────
-    // Supports ?per_page=, ?year=&month= (calendar view), or ?start_date=&end_date=
-
+    /**
+     * GET /api/event
+     * Supports ?per_page=, ?year=&month= (calendar view), or ?start_date=&end_date=
+     */
     public function index(Request $request)
     {
         try {
-            $query = Event::query();
+            $query = Event::query()->with('comedians');
 
             // Non-admins only see their own events
             if (auth()->check() && !auth()->user()->is_admin) {
-                $query->where('user_id', auth()->id());
+                $query->where(function ($q) {
+                    $q->where('user_id', auth()->id())
+                        ->orWhereNull('user_id'); // ← also show events with no user_id
+                });
             }
 
             if ($request->filled('year') && $request->filled('month')) {
@@ -58,79 +62,89 @@ class EventController extends Controller
         }
     }
 
-    // ── POST /api/event ────────────────────────────────────────
-
-
+    /**
+     * POST /api/event
+     * Create a new event with comedians
+     */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'user_id' => 'exists:users,id',
+        $validated = $request->validate([
             'title' => 'required|string|max:255',
-            'event_date' => 'required|date',
+            'event_date' => 'required|date_format:Y-m-d',
             'start_time' => 'required|date_format:H:i',
-            'end_time' => 'required|date_format:H:i|after:start_time',
-            'color' => 'nullable|string|max:50',
+            'end_time' => 'required|date_format:H:i',
+            'color' => 'required|string',
             'description' => 'nullable|string',
+            'comedian_ids' => 'required|array|min:1',
+            'comedian_ids.*' => 'integer|exists:comedians,id',
         ]);
 
-        if ($validator->fails()) {
+        if ($validated['end_time'] <= $validated['start_time']) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors(),
+                'errors' => [
+                    'end_time' => ['The end time must be after start time.'],
+                ],
             ], 422);
         }
 
         try {
-            $user = User::find($request->user_id);
+            $overlapping = Event::overlapping(
+                $validated['event_date'],
+                $validated['start_time'],
+                $validated['end_time']
+            )->first();
 
-            if (!$user) {
+            if ($overlapping) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not found.',
-                ], 404);
+                    'message' => "We don't insert the event because it overlaps with an existing event "
+                        . "(\"{$overlapping->title}\" from {$overlapping->start_time} to {$overlapping->end_time}) on {$validated['event_date']}.",
+                    'errors' => [
+                        'start_time' => ['The time in your event is already taken by an existing event.'],
+                        'end_time' => ['Please choose a different time.'],
+                    ],
+                ], 422);
             }
 
-
             $event = Event::create([
-                'user_id' => $user->id,
-                'title' => $request->title,
-                'event_date' => $request->event_date,
-                'start_time' => $request->start_time,
-                'end_time' => $request->end_time,
-                'color' => $request->color ?? Event::DEFAULT_COLOR,
-                'description' => $request->description,
+                'user_id' => $request->user_id ?? auth()->id(),
+                'title' => $validated['title'],
+                'event_date' => $validated['event_date'],
+                'start_time' => $validated['start_time'],
+                'end_time' => $validated['end_time'],
+                'color' => $validated['color'] ?? Event::DEFAULT_COLOR,
+                'description' => $validated['description'] ?? null,
             ]);
 
-            Log::info('New event created', [
-                'event_id' => $event->id,
-                'title' => $event->title,
-                'date' => $event->event_date,
-            ]);
+            $event->comedians()->attach($validated['comedian_ids']);
+            $event->load('comedians');
 
             return response()->json([
                 'success' => true,
-                'message' => 'Event created successfully.',
+                'message' => 'Event created successfully',
                 'data' => $event,
             ], 201);
 
         } catch (\Exception $e) {
-            Log::error('Event store failed', ['error' => $e->getMessage()]);
+            Log::error('Event creation failed', ['error' => $e->getMessage()]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create event. Please try again.',
+                'message' => 'Failed to create event',
                 'error' => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
     }
 
-    // ── GET /api/event/{id} ────────────────────────────────────
-
+    /**
+     * GET /api/event/{id}
+     */
     public function show($id)
     {
         try {
-            $event = Event::findOrFail($id);
+            $event = Event::with('comedians')->findOrFail($id);
 
             if (auth()->check() && !auth()->user()->is_admin && $event->user_id !== auth()->id()) {
                 return response()->json([
@@ -150,6 +164,8 @@ class EventController extends Controller
                 'message' => 'Event not found.',
             ], 404);
         } catch (\Exception $e) {
+            Log::error('Event show failed', ['error' => $e->getMessage()]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch event.',
@@ -158,17 +174,20 @@ class EventController extends Controller
         }
     }
 
-    // ── PUT/PATCH /api/event/{id} ──────────────────────────────
-
+    /**
+     * PUT/PATCH /api/event/{id}
+     */
     public function update(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|required|string|max:255',
-            'event_date' => 'sometimes|required|date',
+            'event_date' => 'sometimes|required|date_format:Y-m-d',
             'start_time' => 'sometimes|required|date_format:H:i',
-            'end_time' => 'sometimes|required|date_format:H:i|after:start_time',
+            'end_time' => 'sometimes|required|date_format:H:i',
             'color' => 'sometimes|nullable|string|max:50',
             'description' => 'sometimes|nullable|string',
+            'comedians_id' => 'sometimes|required|array|min:1',
+            'comedians_id.*' => 'integer|exists:comedians,id',
         ]);
 
         if ($validator->fails()) {
@@ -182,16 +201,19 @@ class EventController extends Controller
         try {
             $event = Event::findOrFail($id);
 
-            if (!auth()->user()->is_admin && $event->user_id !== auth()->id()) {
+            if (auth()->check() && !auth()->user()->is_admin && $event->user_id !== auth()->id()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized.',
                 ], 403);
             }
 
-            // end_time must be after start_time even when only one of the two is sent
-            $startTime = $request->input('start_time', $event->start_time?->format('H:i'));
-            $endTime = $request->input('end_time', $event->end_time?->format('H:i'));
+            // Resolve the effective date/start/end (use new value if given, else existing)
+            $eventDate = $request->input('event_date', $event->event_date);
+            $startTime = $request->input('start_time', $event->start_time);
+            $endTime = $request->input('end_time', $event->end_time);
+
+            // Validate end_time is after start_time
             if ($startTime && $endTime && $endTime <= $startTime) {
                 return response()->json([
                     'success' => false,
@@ -200,6 +222,22 @@ class EventController extends Controller
                 ], 422);
             }
 
+            // ── Overlap check (excluding this event itself) ─────────
+            $overlapping = Event::overlapping($eventDate, $startTime, $endTime, $event->id)->first();
+
+            if ($overlapping) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "We don't update the event because it overlaps with an existing event "
+                        . "(\"{$overlapping->title}\" from {$overlapping->start_time} to {$overlapping->end_time}) on {$eventDate}.",
+                    'errors' => [
+                        'start_time' => ['This time range overlaps with an existing event.'],
+                        'end_time' => ['This time range overlaps with an existing event.'],
+                    ],
+                ], 422);
+            }
+
+            // Update event details
             $event->update($request->only([
                 'title',
                 'event_date',
@@ -209,10 +247,15 @@ class EventController extends Controller
                 'description',
             ]));
 
+            // Sync comedians if provided
+            if ($request->has('comedians_id')) {
+                $event->comedians()->sync($request->comedians_id);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Event updated successfully.',
-                'data' => $event->fresh(),
+                'data' => $event->fresh('comedians'),
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -231,20 +274,25 @@ class EventController extends Controller
         }
     }
 
-    // ── DELETE /api/event/{id} ─────────────────────────────────
-
+    /**
+     * DELETE /api/event/{id}
+     */
     public function destroy($id)
     {
         try {
             $event = Event::findOrFail($id);
 
-            if (!auth()->user()->is_admin && $event->user_id !== auth()->id()) {
+            if (auth()->check() && !auth()->user()->is_admin && $event->user_id !== auth()->id()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized.',
                 ], 403);
             }
 
+            // Detach comedians before deleting (or use cascade in migration)
+            $event->comedians()->detach();
+
+            // Delete event (or use SoftDelete)
             $event->delete();
 
             return response()->json([

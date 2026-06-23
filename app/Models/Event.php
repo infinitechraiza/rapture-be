@@ -2,118 +2,99 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Event extends Model
 {
-    use HasFactory, SoftDeletes;
+    use SoftDeletes;
+
+    public const DEFAULT_COLOR = '#00d4ff';
 
     protected $fillable = [
         'user_id',
-        'venue_id',
-        'check_in_date',
-        'check_out_date',
-        'is_single_day',
-        'number_of_days',
-        'number_of_nights',
-        'expected_attendees',
-        'needs_accommodation',
-        'organization',
-        'event_name',
-        'contact_person',
-        'position',
-        'email',
-        'phone',
-        'details',
-        'venue_price_per_day',
-        'venue_total',
-        'rooms_total',
-        'grand_total',
-        'status',
-        'admin_notes',
-        'confirmed_at',
-        'rejected_at',
-        'completed_at',
+        'comedians_id',
+        'title',
+        'event_date',
+        'start_time',
+        'end_time',
+        'color',
+        'description',
     ];
 
+    /**
+     * IMPORTANT: event_date is intentionally NOT cast to 'date' or 'datetime'.
+     *
+     * Casting it as a date causes Laravel/Carbon to attach a timezone-aware
+     * Carbon instance. When that gets serialized to JSON it turns into a
+     * full ISO-8601 string like "2026-06-22T00:00:00.000000Z". If anything
+     * downstream (browser, PHP, frontend Date()) reads that UTC midnight
+     * timestamp in a timezone behind UTC, it rolls back to the previous day
+     * — which is exactly the "yesterday" bug you were seeing.
+     *
+     * Keeping it as a plain string means whatever you send in ("2026-06-22")
+     * is exactly what gets stored and returned — no timezone conversion,
+     * no off-by-one.
+     */
     protected $casts = [
-        'check_in_date'      => 'date',
-        'check_out_date'     => 'date',
-        'is_single_day'      => 'boolean',
-        'needs_accommodation' => 'boolean',
-        'venue_price_per_day' => 'decimal:2',
-        'venue_total'        => 'decimal:2',
-        'rooms_total'        => 'decimal:2',
-        'grand_total'        => 'decimal:2',
-        'confirmed_at'       => 'datetime',
-        'rejected_at'        => 'datetime',
-        'completed_at'       => 'datetime',
+        // 'event_date' => 'date', // ← removed on purpose, see note above
     ];
 
-    const STATUS_PENDING   = 'pending';
-    const STATUS_CONFIRMED = 'confirmed';
-    const STATUS_COMPLETED = 'completed';
-    const STATUS_REJECTED  = 'rejected';
-    const STATUS_CANCELLED = 'cancelled';
+    public function comedians(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Comedian::class,
+            'event_comedian',
+            'event_id',
+            'comedian_id'
+        )->withTimestamps();
+    }
 
-    // ── Relationships ──────────────────────────────────────────
-
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function venue()
+    public function scopeForMonth($query, $year, $month)
     {
-        return $this->belongsTo(Venue::class);
+        return $query->whereYear('event_date', $year)
+            ->whereMonth('event_date', $month);
     }
 
-    public function rooms()
+    public function scopeBetweenDates($query, $startDate, $endDate)
     {
-        return $this->hasMany(EventBookingRoom::class);
+        return $query->whereBetween('event_date', [$startDate, $endDate]);
     }
 
-    // ── Scopes ────────────────────────────────────────────────
-
-    public function scopePending($query)
+    /**
+     * Scope: events on a given date whose time range overlaps the given
+     * start/end times. Standard interval-overlap check:
+     * overlap exists if (startA < endB) AND (endA > startB).
+     *
+     * Optionally exclude a specific event id (used during update, so the
+     * event being edited doesn't collide with itself).
+     */
+    public function scopeOverlapping($query, string $date, string $startTime, string $endTime, ?int $excludeId = null)
     {
-        return $query->where('status', self::STATUS_PENDING);
+        $query->where('event_date', $date)
+            ->where('start_time', '<', $endTime)
+            ->where('end_time', '>', $startTime);
+
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+
+        return $query;
     }
 
-    public function scopeConfirmed($query)
+
+    
+    public function setBookingEvent($query, $year, $month)
     {
-        return $query->where('status', self::STATUS_CONFIRMED);
+        return $query->whereYear('event_date', $year)
+            ->whereMonth('event_date', $month);
     }
 
-    public function scopeCompleted($query)
-    {
-        return $query->where('status', self::STATUS_COMPLETED);
-    }
-
-    public function scopeRejected($query)
-    {
-        return $query->where('status', self::STATUS_REJECTED);
-    }
-
-    public function scopeCancelled($query)
-    {
-        return $query->where('status', self::STATUS_CANCELLED);
-    }
-
-    // ── Status helpers ────────────────────────────────────────
-
-    public function isPending(): bool    { return $this->status === self::STATUS_PENDING; }
-    public function isConfirmed(): bool  { return $this->status === self::STATUS_CONFIRMED; }
-    public function isCompleted(): bool  { return $this->status === self::STATUS_COMPLETED; }
-    public function isRejected(): bool   { return $this->status === self::STATUS_REJECTED; }
-    public function isCancelled(): bool  { return $this->status === self::STATUS_CANCELLED; }
-
-    // ── Computed ──────────────────────────────────────────────
-
-    public function getReferenceNumberAttribute(): string
-    {
-        return 'EVB-' . str_pad($this->id, 6, '0', STR_PAD_LEFT);
-    }
 }

@@ -14,6 +14,9 @@ return new class extends Migration {
             $table->string('email')->nullable();
             $table->string('phone')->nullable();
 
+            $table->foreignId('event_id')->nullable()->constrained('events')->nullOnDelete();
+            $table->foreignId('comedian_ids')->nullable()->constrained('comedians')->nullOnDelete();
+
             $table->dateTime('date'); // appointment date
             $table->dateTime('scheduled_at'); // appointment time
 

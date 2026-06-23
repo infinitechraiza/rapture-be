@@ -127,15 +127,12 @@ class ComediansController extends Controller
     public function store(Request $request)
     {
         try {
-
             Log::info('Store payload received', [
                 'name' => $request->name,
                 'has_image' => $request->has('image'),
                 'image_size' => strlen($request->image ?? ''),
                 'all_keys' => array_keys($request->all()),
             ]);
-
-
 
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
@@ -154,18 +151,24 @@ class ComediansController extends Controller
                 ], 422);
             }
 
+            $imageName = null;
+            if ($request->hasFile('image')) {
+                // Generate a safe filename based on comedian name
+                $slug = Str::slug($request->name);
+                $extension = $request->file('image')->getClientOriginalExtension();
+                $imageName = $slug . '.' . $extension;
+
+                // Store the file in public storage (adjust path as needed)
+                $request->file('image')->storeAs('public/comedians', $imageName);
+            }
+
             $comedian = Comedian::create([
                 'name' => $request->name,
                 'tagline' => $request->tagline,
-                'image' => $request->image,
+                'image' => $imageName, // saved filename
                 'bio' => $request->bio,
                 'genre' => $request->genre,
                 'status' => $request->status ?? 'active',
-            ]);
-
-            Log::info('Comedian created', [
-                'comedian_id' => $comedian->id,
-                'name' => $comedian->name,
             ]);
 
             return response()->json([
@@ -175,10 +178,6 @@ class ComediansController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
-            Log::error('Error creating comedian', [
-                'error' => $e->getMessage(),
-            ]);
-
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create comedian',

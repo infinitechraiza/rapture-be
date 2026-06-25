@@ -58,7 +58,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
 
-    
+
 });
 
 
@@ -67,9 +67,13 @@ Route::prefix('booking')->group(function () {
     Route::get('/', [BookingController::class, 'index']);
     Route::post('/', [BookingController::class, 'store']);
     Route::get('/{id}', [BookingController::class, 'show']);
+
     Route::post('/{id}', [BookingController::class, 'update']); // POST for form-data with images
     Route::delete('/{id}', [BookingController::class, 'destroy']);
+    Route::patch('/{id}/status', [BookingController::class, 'updateStatus']);
+
 });
+
 
 
 

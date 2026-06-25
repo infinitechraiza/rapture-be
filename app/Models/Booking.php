@@ -4,28 +4,21 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Carbon\Carbon;
 
 class Booking extends Model
 {
     use HasFactory;
+    protected $fillable = ['full_name', 'user_id', 'comedians_id', 'email', 'phone', 'date', 'scheduled_at', 'status', 'amount', 'notes'];
 
-    protected $fillable = [
-        'full_name',
-        'email',
-        'phone',
-        'date',
-        'scheduled_at',
-        'status',
-        'amount',
-        'notes',
-    ];
+    protected $casts = ['date' => 'datetime', 'scheduled_at' => 'datetime', 'amount' => 'decimal:2'];
 
-    protected $casts = [
-        'date'         => 'datetime',
-        'scheduled_at' => 'datetime',
-        'amount'       => 'decimal:2',
-    ];
+    public function events(): BelongsToMany
+    {
+        return $this->belongsToMany(Event::class,  'booking_event', 'booking_id', 'event_id')
+            ->withTimestamps();
+    }
 
     // ── Scopes ──────────────────────────────────────────────
 
@@ -33,6 +26,7 @@ class Booking extends Model
     {
         return $query->where('status', 'pending');
     }
+
 
     public function scopeConfirmed($query)
     {
@@ -42,7 +36,7 @@ class Booking extends Model
     public function scopeUpcoming($query)
     {
         return $query->where('scheduled_at', '>', now())
-                     ->whereIn('status', ['pending', 'confirmed']);
+            ->whereIn('status', ['pending', 'confirmed']);
     }
 
     public function scopeActive($query)

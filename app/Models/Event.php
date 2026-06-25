@@ -97,4 +97,10 @@ class Event extends Model
             ->whereMonth('event_date', $month);
     }
 
+     public function bookings(): BelongsToMany
+    {
+        return $this->belongsToMany(Event::class, 'booking_event', 'booking_id', 'event_id')
+        ->withTimestamps();
+    }
+
 }

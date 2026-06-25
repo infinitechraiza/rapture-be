@@ -19,7 +19,7 @@ class BookingController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => $bookings,
+            'data' => $bookings,
         ]);
     }
 
@@ -32,7 +32,7 @@ class BookingController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => $booking,
+            'data' => $booking,
         ]);
     }
 
@@ -43,49 +43,52 @@ class BookingController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name'         => 'string|max:255',
-            'email'        => 'nullable|email|max:255',
-            'phone'        => 'nullable|string|max:50',
-            'booking_date' => 'date|after:now',
-            'notes'        => 'nullable|string|max:1000',
+            'name' => 'required|string|max:255',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:50',
+            'event_ids' => 'nullable|array',
+            'event_ids.*' => 'integer|exists:events,id',
+            'booking_date' => 'required|date|after:now',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation error',
-                'errors'  => $validator->errors(),
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         $scheduledAt = Carbon::parse($request->booking_date);
 
-        // Prevent double-booking the same time slot
-        $conflict = Booking::where('scheduled_at', $scheduledAt)
-            ->whereIn('status', ['pending', 'confirmed', 'in_progress'])
-            ->exists();
-
-        if ($conflict) {
-            return response()->json([
-                'success' => false,
-                'message' => 'This time slot is already booked. Please choose another.',
-            ], 409);
-        }
+       
 
         $booking = Booking::create([
-            'full_name'    => $request->name,
-            'email'        => $request->email,
-            'phone'        => $request->phone,
-            'date'         => $scheduledAt->startOfDay(),
+            'full_name' => $request->name,
+            'email' => $request->email,
+            'phone' => $request->phone,
+            'date' => $scheduledAt->copy()->startOfDay(),
             'scheduled_at' => $scheduledAt,
-            'status'       => 'pending',
-            'notes'        => $request->notes,
+            'status' => 'pending',
+            'notes' => $request->notes,
         ]);
+
+        // Attach events to booking via pivot table — now validated above as event_ids
+        $eventIds = $request->input('event_ids', []);
+        if (is_array($eventIds) && !empty($eventIds)) {
+            $booking->events()->attach($eventIds);
+        }
+
+        // Load events AND their comedians so the response carries everything
+        // needed to render the "Selected Events" card (title, time, performers)
+        // exactly like the layout in your screenshot.
+        $booking->load('events.comedians');
 
         return response()->json([
             'success' => true,
             'message' => 'Booking created successfully',
-            'data'    => $booking,
+            'data' => $booking,
         ], 201);
     }
 
@@ -102,13 +105,13 @@ class BookingController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation error',
-                'errors'  => $validator->errors(),
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         $booking = Booking::findOrFail($id);
 
-        if ($request->status === 'cancelled' && ! $booking->can_cancel) {
+        if ($request->status === 'cancelled' && !$booking->can_cancel) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cancellation is only allowed more than 24 hours before the appointment.',
@@ -120,7 +123,7 @@ class BookingController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Booking status updated successfully',
-            'data'    => $booking,
+            'data' => $booking,
         ]);
     }
 
@@ -131,7 +134,7 @@ class BookingController extends Controller
     {
         $booking = Booking::findOrFail($id);
 
-        if (! $booking->can_cancel) {
+        if (!$booking->can_cancel) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cancellation is only allowed more than 24 hours before the appointment.',
@@ -143,7 +146,7 @@ class BookingController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Booking cancelled successfully',
-            'data'    => $booking,
+            'data' => $booking,
         ]);
     }
 
@@ -160,20 +163,20 @@ class BookingController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation error',
-                'errors'  => $validator->errors(),
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         $scheduledAt = Carbon::parse($request->booking_date);
 
-        $isAvailable = ! Booking::where('scheduled_at', $scheduledAt)
+        $isAvailable = !Booking::where('scheduled_at', $scheduledAt)
             ->whereIn('status', ['pending', 'confirmed', 'in_progress'])
             ->exists();
 
         return response()->json([
             'success' => true,
-            'data'    => [
-                'available'    => $isAvailable,
+            'data' => [
+                'available' => $isAvailable,
                 'scheduled_at' => $scheduledAt->toDateTimeString(),
             ],
         ]);

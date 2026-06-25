@@ -79,15 +79,7 @@ class EventController extends Controller
             'comedian_ids.*' => 'integer|exists:comedians,id',
         ]);
 
-        if ($validated['end_time'] <= $validated['start_time']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => [
-                    'end_time' => ['The end time must be after start time.'],
-                ],
-            ], 422);
-        }
+       
 
         try {
             $overlapping = Event::overlapping(
@@ -213,15 +205,7 @@ class EventController extends Controller
             $startTime = $request->input('start_time', $event->start_time);
             $endTime = $request->input('end_time', $event->end_time);
 
-            // Validate end_time is after start_time
-            if ($startTime && $endTime && $endTime <= $startTime) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => ['end_time' => ['End time must be after start time.']],
-                ], 422);
-            }
-
+           
             // ── Overlap check (excluding this event itself) ─────────
             $overlapping = Event::overlapping($eventDate, $startTime, $endTime, $event->id)->first();
 

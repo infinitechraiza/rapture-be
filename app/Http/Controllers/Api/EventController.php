@@ -18,31 +18,21 @@ class EventController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = Event::query()->with('comedians');
-
-            // Non-admins only see their own events
-            if (auth()->check() && !auth()->user()->is_admin) {
-                $query->where(function ($q) {
-                    $q->where('user_id', auth()->id())
-                        ->orWhereNull('user_id'); // ← also show events with no user_id
-                });
-            }
-
-            if ($request->filled('year') && $request->filled('month')) {
-                $query->forMonth((int) $request->year, (int) $request->month);
-            } elseif ($request->filled('start_date') && $request->filled('end_date')) {
-                $query->betweenDates($request->start_date, $request->end_date);
-            }
-
-            if ($request->filled('search')) {
-                $search = $request->search;
-                $query->where(function ($q) use ($search) {
-                    $q->where('title', 'like', "%{$search}%")
-                        ->orWhere('description', 'like', "%{$search}%");
-                });
-            }
-
-            $events = $query->orderBy('event_date')
+            $events = Event::query()
+                ->with('comedians')
+                ->when($request->filled('year') && $request->filled('month'), function ($query, $request) {
+                    $query->forMonth((int) $request->year, (int) $request->month);
+                })
+                ->when($request->filled('start_date') && $request->filled('end_date'), function ($query, $request) {
+                    $query->betweenDates($request->start_date, $request->end_date);
+                })
+                ->when($request->filled('search'), function ($query, $request) {
+                    $query->where(function ($q) use ($request) {
+                        $q->where('title', 'like', "%{$request->search}%")
+                            ->orWhere('description', 'like', "%{$request->search}%");
+                    });
+                })
+                ->orderBy('event_date')
                 ->orderBy('start_time')
                 ->paginate($request->per_page ?? 15);
 
@@ -79,7 +69,7 @@ class EventController extends Controller
             'comedian_ids.*' => 'integer|exists:comedians,id',
         ]);
 
-       
+
 
         try {
             $overlapping = Event::overlapping(
@@ -205,7 +195,7 @@ class EventController extends Controller
             $startTime = $request->input('start_time', $event->start_time);
             $endTime = $request->input('end_time', $event->end_time);
 
-           
+
             // ── Overlap check (excluding this event itself) ─────────
             $overlapping = Event::overlapping($eventDate, $startTime, $endTime, $event->id)->first();
 

@@ -20,9 +20,6 @@ class EventController extends Controller
         try {
             $events = Event::query()
                 ->with('comedians')
-                ->when($request->filled('year') && $request->filled('month'), function ($query, $request) {
-                    $query->forMonth((int) $request->year, (int) $request->month);
-                })
                 ->when($request->filled('start_date') && $request->filled('end_date'), function ($query, $request) {
                     $query->betweenDates($request->start_date, $request->end_date);
                 })
@@ -68,8 +65,6 @@ class EventController extends Controller
             'comedian_ids' => 'required|array|min:1',
             'comedian_ids.*' => 'integer|exists:comedians,id',
         ]);
-
-
 
         try {
             $overlapping = Event::overlapping(

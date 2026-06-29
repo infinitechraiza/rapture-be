@@ -36,7 +36,7 @@
                                     <td>
                                         <p style="color: #fbbf24; font-size: 18px; font-weight: 600; margin: 0 0 15px 0;">Hello {{ $user->first_name }},</p>
                                         
-                                        <p style="color: #fde68a; font-size: 16px; margin: 0 0 20px 0;">We received a request to reset the password for your <strong style="color: #fbbf24;">Rapture Comedy Bar & Cafe</strong> account.</p>
+                                        <p style="color: #fde68a; font-size: 16px; margin: 0 0 20px 0;">We received a request to reset the password for your <strong style="color: #fbbf24;">Rapture Cafe Bar</strong> account.</p>
                                         
                                         <p style="color: #fde68a; font-size: 16px; margin: 0 0 20px 0;">Click the button below to create a new password:</p>
 
@@ -78,7 +78,7 @@
                                             <tr>
                                                 <td>
                                                     <p style="color: #fbbf24; margin: 0 0 5px 0; font-weight: bold;">🛡️ Security Tip:</p>
-                                                    <p style="color: #fde68a; margin: 0; font-size: 14px;">Never share your password with anyone. Rapture Comedy Bar & Cafe will never ask for your password via email.</p>
+                                                    <p style="color: #fde68a; margin: 0; font-size: 14px;">Never share your password with anyone. Rapture Cafe Bar will never ask for your password via email.</p>
                                                 </td>
                                             </tr>
                                         </table>
@@ -92,7 +92,7 @@
                     <tr>
                         <td align="center" style="padding-top: 30px; border-top: 1px solid rgba(251, 191, 36, 0.2);">
                             <p style="color: rgba(253, 230, 138, 0.6); font-size: 12px; margin: 5px 0;">If you're having trouble clicking the button, copy and paste the URL into your web browser.</p>
-                            <p style="color: rgba(253, 230, 138, 0.6); font-size: 12px; margin: 5px 0;">© {{ date('Y') }} Rapture Comedy Bar & Cafe. All rights reserved.</p>
+                            <p style="color: rgba(253, 230, 138, 0.6); font-size: 12px; margin: 5px 0;">© {{ date('Y') }} Rapture Cafe Bar. All rights reserved.</p>
                             <p style="color: rgba(253, 230, 138, 0.6); font-size: 12px; margin: 5px 0;">This is an automated message, please do not reply.</p>
                         </td>
                     </tr>

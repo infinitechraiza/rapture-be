@@ -35,7 +35,7 @@ class VerifyEmail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Verify Your Email Address - Rapture Comedy Bar & Cafe',
+            subject: 'Verify Your Email Address - Rapture Cafe Bar',
         );
     }
 

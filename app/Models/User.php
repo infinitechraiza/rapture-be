@@ -77,4 +77,35 @@ class User extends Authenticatable
         return $this->hasMany(Booking::class)
             ->active();
     }
+
+    /**
+     * Activity log entries where this user was the one changed (target).
+     */
+    public function activityLogs(): HasMany
+    {
+        return $this->hasMany(UserActivityLog::class, 'user_id')
+            ->latest();
+    }
+
+    /**
+     * Activity log entries where this user was the one who made the
+     * change (actor) — useful for an admin's own audit trail.
+     */
+    public function performedActivityLogs(): HasMany
+    {
+        return $this->hasMany(UserActivityLog::class, 'actor_id')
+            ->latest();
+    }
+
+
+
+    public function __construct(){
+        parent::__construct();
+    }
+
+    public function build()
+    {
+        return $this->subject('Your account is pending approval')
+            ->view('emails.account-pending-approval');
+    }
 }

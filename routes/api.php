@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\AboutController;
+use App\Http\Controllers\Api\GalleryController;
 use App\Http\Controllers\Api\AboutValueController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\EventController;
@@ -58,25 +59,28 @@ Route::prefix('users')->group(function () {
 
 // Make sure the event routes are inside this middleware group:
 Route::middleware('auth:sanctum')->group(function () {
-    Route::prefix('event')->group(function () {
-        Route::get('/', [EventController::class, 'index']);
-        Route::post('/', [EventController::class, 'store']);
-        Route::get('/{id}', [EventController::class, 'show']);
-        Route::match(['post', 'put'], '/{id}', [EventController::class, 'update']);
-        Route::delete('/{id}', [EventController::class, 'destroy']);
-    });
+    Route::post('/event', [EventController::class, 'store']);
+    Route::match(['post', 'patch'], '/event/{id}', [EventController::class, 'update']);
+    Route::delete('/event/{id}', [EventController::class, 'destroy']);
 });
 
+// keep public if desired
+Route::get('/event', [EventController::class, 'index']);
+Route::get('/event/{id}', [EventController::class, 'show']);
 
-// Bookings routes (public)
+
 Route::prefix('booking')->group(function () {
-    Route::get('/', [BookingController::class, 'index']);
     Route::post('/', [BookingController::class, 'store']);
     Route::get('/{id}', [BookingController::class, 'show']);
+});
 
+// Bookings routes (public)
+Route::prefix('booking')->middleware('auth:sanctum')->group(function () {
+    Route::get('/', [BookingController::class, 'index']);
     Route::post('/{id}', [BookingController::class, 'update']); // POST for form-data with images
     Route::delete('/{id}', [BookingController::class, 'destroy']);
     Route::patch('/{id}/status', [BookingController::class, 'updateStatus']);
+    Route::delete('/booking/{id}', [BookingController::class, 'cancel']);
 });
 
 
@@ -112,3 +116,17 @@ Route::prefix('about')->group(function () {
     Route::patch('{id}', [AboutController::class, 'update'])->whereNumber('id');
     Route::delete('{id}', [AboutController::class, 'destroy'])->whereNumber('id');
 });
+
+
+
+
+
+Route::prefix('gallery')->group(function () {
+    Route::get('/', [GalleryController::class, 'index']);
+    Route::post('', [GalleryController::class, 'store']);
+    Route::get('/{id}', [GalleryController::class, 'show']);
+    Route::put('/{id}', [GalleryController::class, 'update']);
+    Route::patch('/{id}', [GalleryController::class, 'update']);
+    Route::delete('/{id}', [GalleryController::class, 'destroy']);
+});
+

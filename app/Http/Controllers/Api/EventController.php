@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Event;
-use App\Models\Comedian;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -20,9 +20,6 @@ class EventController extends Controller
         try {
             $events = Event::query()
                 ->with('comedians')
-                ->when($request->filled('start_date') && $request->filled('end_date'), function ($query, $request) {
-                    $query->betweenDates($request->start_date, $request->end_date);
-                })
                 ->when($request->filled('search'), function ($query, $request) {
                     $query->where(function ($q) use ($request) {
                         $q->where('title', 'like', "%{$request->search}%")
@@ -55,6 +52,20 @@ class EventController extends Controller
      */
     public function store(Request $request)
     {
+        Log::info('Auth check on event store', [
+            'auth_check' => auth()->check(),
+            'auth_id' => auth()->id(),
+            'has_cookie' => $request->hasHeader('Cookie'),
+            'has_bearer' => $request->bearerToken(),
+        ]);
+
+        // if (!auth()->check()) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'You must be logged in to create an event.',
+        //     ], 401);
+        // }
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'event_date' => 'required|date_format:Y-m-d',
@@ -62,6 +73,7 @@ class EventController extends Controller
             'end_time' => 'required|date_format:H:i',
             'color' => 'required|string',
             'description' => 'nullable|string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
             'comedian_ids' => 'required|array|min:1',
             'comedian_ids.*' => 'integer|exists:comedians,id',
         ]);
@@ -85,13 +97,27 @@ class EventController extends Controller
                 ], 422);
             }
 
+            $imagePath = null;
+            if ($request->hasFile('image')) {
+
+                // Stores under storage/app/public/images/events
+                $filename = time() . '_' . uniqid() . '.' . $request->file('image')->getClientOriginalExtension();
+
+                $imagePath = $request->file('image')->storeAs(
+                    'images/events',
+                    $filename,
+                    'public'
+                );
+            }
+
             $event = Event::create([
-                'user_id' => $request->user_id ?? auth()->id(),
+                'user_id' => auth()->id(),
                 'title' => $validated['title'],
                 'event_date' => $validated['event_date'],
                 'start_time' => $validated['start_time'],
                 'end_time' => $validated['end_time'],
                 'color' => $validated['color'] ?? Event::DEFAULT_COLOR,
+                'image' => $imagePath,
                 'description' => $validated['description'] ?? null,
             ]);
 
@@ -106,7 +132,6 @@ class EventController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Event creation failed', ['error' => $e->getMessage()]);
-
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create event',
@@ -159,14 +184,30 @@ class EventController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|required|string|max:255',
             'event_date' => 'sometimes|required|date_format:Y-m-d',
-            'start_time' => 'sometimes|required|date_format:H:i',
-            'end_time' => 'sometimes|required|date_format:H:i',
+            'start_time' => 'sometimes|required',
+            'end_time' => 'sometimes|required',
             'color' => 'sometimes|nullable|string|max:50',
             'description' => 'sometimes|nullable|string',
+            'image' => 'sometimes|nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
             'comedians_id' => 'sometimes|required|array|min:1',
             'comedians_id.*' => 'integer|exists:comedians,id',
         ]);
 
+        Log::info('Validation rules for event update', ['rules' => $validator->getRules()]);
+        Log::info('Request data for event update', ['data' => $request->all()]);
+
+
+        $validator->after(function ($validator) use ($request) {
+            if ($request->input('start_time') === '00:00:00' || $request->input('start_time') === '24:00:00') {
+                $request->merge(['start_time' => '24:00:00']);
+            }
+
+            if ($request->input('end_time') === '00:00:00' || $request->input('end_time') === '24:00:00') {
+                $request->merge(['end_time' => '24:00:00']);
+            }
+        });
+
+        $validator->validate();
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -179,19 +220,16 @@ class EventController extends Controller
             $event = Event::findOrFail($id);
 
             if (auth()->check() && !auth()->user()->is_admin && $event->user_id !== auth()->id()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized.',
-                ], 403);
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
             }
 
-            // Resolve the effective date/start/end (use new value if given, else existing)
-            $eventDate = $request->input('event_date', $event->event_date);
-            $startTime = $request->input('start_time', $event->start_time);
-            $endTime = $request->input('end_time', $event->end_time);
+            $eventDate = \Carbon\Carbon::parse($event->event_date)->format('Y-m-d');
+            $startTime = Carbon::createFromFormat('H:i:s', $request->start_time)
+                ->format('H:i:s');
 
+            $endTime = Carbon::createFromFormat('H:i:s', $request->end_time)
+                ->format('H:i:s');
 
-            // ── Overlap check (excluding this event itself) ─────────
             $overlapping = Event::overlapping($eventDate, $startTime, $endTime, $event->id)->first();
 
             if ($overlapping) {
@@ -206,8 +244,19 @@ class EventController extends Controller
                 ], 422);
             }
 
-            // Update event details
-            $event->update($request->only([
+            if ($request->hasFile('image')) {
+                if ($event->image && \Illuminate\Support\Facades\Storage::disk('public')->exists($event->image)) {
+                    \Illuminate\Support\Facades\Storage::disk('public')->delete($event->image);
+                }
+                $event->image = $request->file('image')->store('images/events', 'public');
+            }
+
+            Log::info([
+                'start_time' => $request->start_time,
+                'end_time' => $request->end_time,
+            ]);
+
+            $event->fill($request->only([
                 'title',
                 'event_date',
                 'start_time',
@@ -216,7 +265,9 @@ class EventController extends Controller
                 'description',
             ]));
 
-            // Sync comedians if provided
+
+            $event->save();
+
             if ($request->has('comedians_id')) {
                 $event->comedians()->sync($request->comedians_id);
             }
@@ -228,13 +279,9 @@ class EventController extends Controller
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Event not found.',
-            ], 404);
+            return response()->json(['success' => false, 'message' => 'Event not found.'], 404);
         } catch (\Exception $e) {
             Log::error('Event update failed', ['error' => $e->getMessage()]);
-
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update event.',
@@ -256,6 +303,15 @@ class EventController extends Controller
                     'success' => false,
                     'message' => 'Unauthorized.',
                 ], 403);
+            }
+
+
+            // Delete the associated image file, if one exists
+            if ($event->image) {
+                $imagePath = public_path('storage/' . $event->image);
+                if (file_exists($imagePath)) {
+                    unlink($imagePath);
+                }
             }
 
             // Detach comedians before deleting (or use cascade in migration)

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
@@ -11,11 +12,31 @@ use Carbon\Carbon;
 class BookingController extends Controller
 {
     /**
-     * List all bookings (no user_id — table has no auth relation).
+     * List bookings for the authenticated user only.
+     * Falls back to matching by email if user_id isn't set on older rows.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $bookings = Booking::orderBy('scheduled_at', 'desc')->get();
+        $user = $request->user();
+
+        $query = Booking::with('events.comedians')->orderBy('scheduled_at', 'desc');
+
+        if ($user) {
+            $query->where(function ($q) use ($user) {
+                $q->where('user_id', auth()->id());
+                if ($user->email) {
+                    $q->orWhere('email', $user->email);
+                }
+            });
+        } else {
+            // No authenticated user — don't leak everyone's bookings.
+            return response()->json([
+                'success' => false,
+                'message' => 'Please log in to view your reservations.',
+            ], 401);
+        }
+
+        $bookings = $query->get();
 
         return response()->json([
             'success' => true,
@@ -28,7 +49,7 @@ class BookingController extends Controller
      */
     public function show($id)
     {
-        $booking = Booking::findOrFail($id);
+        $booking = Booking::with('events.comedians')->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -42,30 +63,51 @@ class BookingController extends Controller
      */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:50',
-            'event_ids' => 'nullable|array',
-            'event_ids.*' => 'integer|exists:events,id',
-            'booking_date' => 'required|date|after:now',
-            'notes' => 'nullable|string|max:1000',
-        ]);
+       $scheduledAt = Carbon::parse($request->booking_date);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors(),
-            ], 422);
+        $user = User::where('email', $request->email)->first();
+        $booking = Booking::create([
+            'full_name' => $request->name,
+            // FIX: previously never set, so bookings had no owner and
+            // couldn't be scoped back to a user in index() above.
+            'user_id' => $user['id'] ?? null,
+            'email' => $request->email,
+            'phone' => $request->phone,
+            'date' => $scheduledAt->copy()->startOfDay(),
+            'scheduled_at' => $scheduledAt,
+            'status' => 'pending',
+            'notes' => $request->notes,
+        ]);
+         $eventIds = $request->input('event_ids', []);
+
+        if (is_array($eventIds) && !empty($eventIds)) {
+            $alreadyBooked = Booking::forEvents($eventIds)
+                ->with('events:id,title')
+                ->get()
+                ->flatMap(fn($booking) => $booking->events)
+                ->unique('id');
+
+            if ($alreadyBooked->isNotEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Selected events are already booked: '
+                        . $alreadyBooked->pluck('title')->implode(', '),
+                    'errors' => [
+                        'event_ids' => [
+                            'These events already have an active booking: '
+                            . $alreadyBooked->pluck('title')->implode(', ')
+                        ],
+                    ],
+                ], 422);
+            }
         }
 
         $scheduledAt = Carbon::parse($request->booking_date);
 
-       
-
+        $user = User::where('email', $request->email)->first();
         $booking = Booking::create([
             'full_name' => $request->name,
+            'user_id' => $user['id'] ?? null,
             'email' => $request->email,
             'phone' => $request->phone,
             'date' => $scheduledAt->copy()->startOfDay(),
@@ -74,15 +116,10 @@ class BookingController extends Controller
             'notes' => $request->notes,
         ]);
 
-        // Attach events to booking via pivot table — now validated above as event_ids
-        $eventIds = $request->input('event_ids', []);
         if (is_array($eventIds) && !empty($eventIds)) {
             $booking->events()->attach($eventIds);
         }
 
-        // Load events AND their comedians so the response carries everything
-        // needed to render the "Selected Events" card (title, time, performers)
-        // exactly like the layout in your screenshot.
         $booking->load('events.comedians');
 
         return response()->json([
@@ -119,6 +156,7 @@ class BookingController extends Controller
         }
 
         $booking->update(['status' => $request->status]);
+        $booking->load('events.comedians');
 
         return response()->json([
             'success' => true,
@@ -127,9 +165,6 @@ class BookingController extends Controller
         ]);
     }
 
-    /**
-     * Cancel a booking.
-     */
     public function cancel($id)
     {
         $booking = Booking::findOrFail($id);
@@ -150,9 +185,6 @@ class BookingController extends Controller
         ]);
     }
 
-    /**
-     * Check whether a specific datetime slot is available.
-     */
     public function checkAvailability(Request $request)
     {
         $validator = Validator::make($request->all(), [

@@ -7,7 +7,6 @@ use App\Models\Comedian;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 
 class ComediansController extends Controller
 {
@@ -126,58 +125,50 @@ class ComediansController extends Controller
      */
     public function store(Request $request)
     {
+
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'tagline' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'genre' => 'nullable|string|max:100',
+            'bio' => 'nullable|string',
+            'status' => 'nullable|in:active,inactive',
+        ]);
+
+
         try {
-            Log::info('Store payload received', [
-                'name' => $request->name,
-                'has_image' => $request->has('image'),
-                'image_size' => strlen($request->image ?? ''),
-                'all_keys' => array_keys($request->all()),
-            ]);
-
-            $validator = Validator::make($request->all(), [
-                'name' => 'required|string|max:255',
-                'tagline' => 'nullable|string|max:255',
-                'image' => 'nullable|string',
-                'bio' => 'nullable|string',
-                'genre' => 'nullable|string|max:100',
-                'status' => 'nullable|in:active,inactive',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => $validator->errors(),
-                ], 422);
-            }
-
-            $imageName = null;
+            $imagePath = null;
             if ($request->hasFile('image')) {
-                // Generate a safe filename based on comedian name
-                $slug = Str::slug($request->name);
-                $extension = $request->file('image')->getClientOriginalExtension();
-                $imageName = $slug . '.' . $extension;
+                // Stores under storage/app/public/images/events
 
-                // Store the file in public storage (adjust path as needed)
-                $request->file('image')->storeAs('public/comedians', $imageName);
+                $filename = time() . '_' . uniqid() . '.' . $request->file('image')->getClientOriginalExtension();
+
+                $imagePath = $request->file('image')->storeAs(
+                    'images/comedians',
+                    $filename,
+                    'public'
+                );
             }
 
-            $comedian = Comedian::create([
-                'name' => $request->name,
-                'tagline' => $request->tagline,
-                'image' => $imageName, // saved filename
-                'bio' => $request->bio,
-                'genre' => $request->genre,
-                'status' => $request->status ?? 'active',
+            $event = Comedian::create([
+                'name' => $validated['name'],
+                'tagline' => $validated['tagline'] ?? null,
+                'image' => $imagePath,
+                'genre' => $validated['genre'] ?? null,
+                'bio' => $validated['bio'] ?? null,
+                'status' => $validated['status'] ?? 'active',
             ]);
 
+            $item = Comedian::find($event->id);
             return response()->json([
                 'success' => true,
                 'message' => 'Comedian created successfully',
-                'data' => $comedian,
+                'data' => $item,
             ], 201);
 
         } catch (\Exception $e) {
+            Log::error('Comedian creation failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create comedian',
@@ -191,34 +182,68 @@ class ComediansController extends Controller
      */
     public function update(Request $request, $id)
     {
+
+
+        Log::info('=== Comedian update() called ===', [
+            'comedian_id' => $id,
+            'has_file_image' => $request->hasFile('image'),
+            'content_type' => $request->header('Content-Type'),
+            'method' => $request->method(),
+            'all_input_keys' => array_keys($request->all()),
+            'raw_body_keys' => array_keys($request->request->all()),
+        ]);
+
+        $comedian = Comedian::find($id);
+
+        if (!$comedian) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Comedian not found'
+            ], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'sometimes|required|string|max:255',
+            'tagline' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'genre' => 'nullable|string|max:100',
+            'bio' => 'nullable|string',
+            'status' => 'nullable|in:active,inactive',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
         try {
-            $comedian = Comedian::find($id);
+            $imagePath = $comedian->image; // preserve existing image unless a new one is uploaded
 
-            if (!$comedian) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Comedian not found'
-                ], 404);
+            if ($request->hasFile('image')) {
+                // Delete the old file first, if one exists
+                if ($comedian->image) {
+                    $oldImagePath = public_path('storage/' . $comedian->image);
+                    if (file_exists($oldImagePath)) {
+                        unlink($oldImagePath);
+                    }
+                }
+
+                // Stores under storage/app/public/images/comedians
+                $filename = time() . '_' . uniqid() . '.' . $request->file('image')->getClientOriginalExtension();
+
+                $imagePath = $request->file('image')->storeAs(
+                    'images/comedians',
+                    $filename,
+                    'public'
+                );
             }
 
-            $validator = Validator::make($request->all(), [
-                'name' => 'nullable|string|max:255',
-                'tagline' => 'nullable|string|max:255',
-                'image' => 'nullable|string',
-                'bio' => 'nullable|string',
-                'genre' => 'nullable|string|max:100',
-                'status' => 'nullable|in:active,inactive',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => $validator->errors(),
-                ], 422);
-            }
-
-            $comedian->update($request->only(['name', 'tagline', 'image', 'bio', 'genre', 'status']));
+            $comedian->fill($request->only(['name', 'tagline', 'bio', 'genre', 'status']));
+            $comedian->image = $imagePath;
+            $comedian->save();
 
             Log::info('Comedian updated', [
                 'comedian_id' => $comedian->id,
@@ -255,6 +280,19 @@ class ComediansController extends Controller
             'comedian_id' => $comedian->id,
             'name' => $comedian->name,
         ]);
+
+
+
+        // Delete the associated image file, if one exists
+        if ($comedian->image) {
+            $imagePath = public_path('storage/' . $comedian->image);
+            if (file_exists($imagePath)) {
+                unlink($imagePath);
+            }
+        }
+
+
+
         if (!$comedian) {
             return response()->json(['success' => false, 'message' => 'Not found'], 404);
         }

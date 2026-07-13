@@ -14,42 +14,52 @@ class Booking extends Model
 
     protected $casts = ['date' => 'datetime', 'scheduled_at' => 'datetime', 'amount' => 'decimal:2'];
 
+    // FIX: these accessors existed but were never appended, so
+    // is_upcoming/is_active/can_cancel never actually reached the frontend.
+    protected $appends = ['is_upcoming', 'is_active', 'can_cancel'];
+
     public function events(): BelongsToMany
     {
-        return $this->belongsToMany(Event::class,  'booking_event', 'booking_id', 'event_id')
+        return $this->belongsToMany(Event::class, 'booking_event', 'booking_id', 'event_id')
             ->withTimestamps();
     }
 
     // ── Scopes ──────────────────────────────────────────────
-
     public function scopePending($query)
     {
         return $query->where('status', 'pending');
     }
-
-
     public function scopeConfirmed($query)
     {
         return $query->where('status', 'confirmed');
     }
-
     public function scopeUpcoming($query)
     {
-        return $query->where('scheduled_at', '>', now())
-            ->whereIn('status', ['pending', 'confirmed']);
+        return $query->where('scheduled_at', '>', now())->whereIn('status', ['pending', 'confirmed']);
     }
+
+
 
     public function scopeActive($query)
     {
         return $query->where('status', 'in_progress');
     }
 
+
+    public function scopeForEvents($query, array $eventIds)
+    {
+        return $query
+            ->whereIn('status', ['pending', 'confirmed', 'in_progress'])
+            ->whereHas('events', function ($q) use ($eventIds) {
+                $q->whereIn('events.id', $eventIds);
+            });
+    }
+
     // ── Accessors ────────────────────────────────────────────
 
     public function getIsUpcomingAttribute(): bool
     {
-        return $this->scheduled_at->isFuture()
-            && in_array($this->status, ['pending', 'confirmed']);
+        return $this->scheduled_at->isFuture() && in_array($this->status, ['pending', 'confirmed']);
     }
 
     public function getIsActiveAttribute(): bool

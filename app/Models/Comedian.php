@@ -76,4 +76,14 @@ class Comedian extends Model
         }
         return substr($initials, 0, 2);
     }
+    protected $appends = ['image_url'];
+
+    public function getImageUrlAttribute(): ?string
+    {
+        if (!$this->image) {
+            return null;
+        }
+        return asset('storage/' . ltrim($this->image, '/'));
+    }
+
 }

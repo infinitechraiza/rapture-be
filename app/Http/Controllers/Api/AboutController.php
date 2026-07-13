@@ -22,7 +22,7 @@ class AboutController extends Controller
             ->latest()
             ->first();
 
-        if (! $section) {
+        if (!$section) {
             return response()->json([
                 'message' => 'About section not found.',
             ], 404);
@@ -46,6 +46,7 @@ class AboutController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+      
         $section = AboutSection::create($validator->validated());
 
         return response()->json(['data' => $section->fresh('values')], 201);
@@ -59,14 +60,14 @@ class AboutController extends Controller
     {
         $section = AboutSection::with('values')->find($id);
 
-        if (! $section) {
+        if (!$section) {
             return response()->json(['message' => 'About section not found.'], 404);
         }
 
         return response()->json(['data' => $section]);
     }
 
-    /**
+    /** 
      * PUT/PATCH /api/about/{id}
      * Equivalent to Next.js [id]/route.ts PUT handler.
      */
@@ -74,7 +75,7 @@ class AboutController extends Controller
     {
         $section = AboutSection::find($id);
 
-        if (! $section) {
+        if (!$section) {
             return response()->json(['message' => 'About section not found.'], 404);
         }
 
@@ -97,7 +98,7 @@ class AboutController extends Controller
     {
         $section = AboutSection::find($id);
 
-        if (! $section) {
+        if (!$section) {
             return response()->json(['message' => 'About section not found.'], 404);
         }
 

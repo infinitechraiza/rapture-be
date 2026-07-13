@@ -21,6 +21,7 @@ class Event extends Model
         'start_time',
         'end_time',
         'color',
+        'image',
         'description',
     ];
 
@@ -90,17 +91,29 @@ class Event extends Model
     }
 
 
-    
+
     public function setBookingEvent($query, $year, $month)
     {
         return $query->whereYear('event_date', $year)
             ->whereMonth('event_date', $month);
     }
 
-     public function bookings(): BelongsToMany
+    public function bookings(): BelongsToMany
     {
         return $this->belongsToMany(Event::class, 'booking_event', 'booking_id', 'event_id')
-        ->withTimestamps();
+            ->withTimestamps();
     }
 
+
+
+
+    protected $appends = ['image_url'];
+
+    public function getImageUrlAttribute(): ?string
+    {
+        if (!$this->image) {
+            return null;
+        }
+        return asset('storage/' . ltrim($this->image, '/'));
+    }
 }

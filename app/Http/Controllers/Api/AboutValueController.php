@@ -36,8 +36,10 @@ class AboutValueController extends Controller
         }
 
         $data = $validator->validated();
+        $data['is_active'] = true; // Ensure the first section is active by default
 
-        if (! isset($data['sort_order'])) {
+
+        if (!isset($data['sort_order'])) {
             $data['sort_order'] = AboutValue::where('about_section_id', $data['about_section_id'] ?? null)
                 ->max('sort_order') + 1;
         }
@@ -54,8 +56,8 @@ class AboutValueController extends Controller
     {
         $value = AboutValue::find($id);
 
-        if (! $value) {
-            return response()->json(['message' => 'Value card not found.'], 404);
+        if (!$value) {
+            return response()->json(['message' => 'Value card not found3333.'], 404);
         }
 
         return response()->json(['data' => $value]);
@@ -68,8 +70,8 @@ class AboutValueController extends Controller
     {
         $value = AboutValue::find($id);
 
-        if (! $value) {
-            return response()->json(['message' => 'Value card not found.'], 404);
+        if (!$value) {
+            return response()->json(['message' => 'Value card not found222.'], 404);
         }
 
         $validator = $this->validator($request, isUpdate: true);
@@ -90,8 +92,8 @@ class AboutValueController extends Controller
     {
         $value = AboutValue::find($id);
 
-        if (! $value) {
-            return response()->json(['message' => 'Value card not found.'], 404);
+        if (!$value) {
+            return response()->json(['message' => 'Value card not found1111.'], 404);
         }
 
         $value->delete();

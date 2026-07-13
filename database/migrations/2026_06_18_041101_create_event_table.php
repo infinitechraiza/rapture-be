@@ -16,9 +16,10 @@ return new class extends Migration {
             $table->unsignedBigInteger('comedians_id')->nullable();
             $table->string('title');
             $table->date('event_date');
-            $table->time('start_time');
-            $table->time('end_time');
+            $table->datetime('start_time')->nullable()->change();
+            $table->datetime('end_time')->nullable()->change();
             $table->string('color', 50)->default('#00d4ff');
+            $table->string('image')->nullable()->after('color');
             $table->text('description')->nullable();
             $table->timestamps();
             $table->softDeletes();

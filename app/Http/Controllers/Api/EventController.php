@@ -68,6 +68,7 @@ class EventController extends Controller
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
+            'badge' => 'max:255',
             'event_date' => 'required|date_format:Y-m-d',
             'start_time' => 'required|date_format:H:i',
             'end_time' => 'required|date_format:H:i',
@@ -113,6 +114,7 @@ class EventController extends Controller
             $event = Event::create([
                 'user_id' => auth()->id(),
                 'title' => $validated['title'],
+                'badge' => $validated['badge'],
                 'event_date' => $validated['event_date'],
                 'start_time' => $validated['start_time'],
                 'end_time' => $validated['end_time'],
@@ -183,6 +185,7 @@ class EventController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|required|string|max:255',
+            'badge' => 'sometimes|required|string|max:255',
             'event_date' => 'sometimes|required|date_format:Y-m-d',
             'start_time' => 'sometimes|required',
             'end_time' => 'sometimes|required',
@@ -258,6 +261,7 @@ class EventController extends Controller
 
             $event->fill($request->only([
                 'title',
+                'badge',
                 'event_date',
                 'start_time',
                 'end_time',

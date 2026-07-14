@@ -17,6 +17,7 @@ class Event extends Model
         'user_id',
         'comedians_id',
         'title',
+        'badge',
         'event_date',
         'start_time',
         'end_time',

@@ -34,7 +34,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
 });
 
-
+// Auth routes (private)
 Route::middleware('auth:sanctum')->group(
     function () {
         // Auth routes (authenticated)
@@ -43,9 +43,7 @@ Route::middleware('auth:sanctum')->group(
             Route::get('/me', [AuthController::class, 'me']);
         });
     },
-
 );
-
 
 // Events routes (public)
 Route::prefix('users')->group(function () {
@@ -68,13 +66,13 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::get('/event', [EventController::class, 'index']);
 Route::get('/event/{id}', [EventController::class, 'show']);
 
-
+// Bookings routes (public)
 Route::prefix('booking')->group(function () {
     Route::post('/', [BookingController::class, 'store']);
     Route::get('/{id}', [BookingController::class, 'show']);
 });
 
-// Bookings routes (public)
+// Bookings routes (private)
 Route::prefix('booking')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [BookingController::class, 'index']);
     Route::post('/{id}', [BookingController::class, 'update']); // POST for form-data with images
@@ -82,9 +80,6 @@ Route::prefix('booking')->middleware('auth:sanctum')->group(function () {
     Route::patch('/{id}/status', [BookingController::class, 'updateStatus']);
     Route::delete('/booking/{id}', [BookingController::class, 'cancel']);
 });
-
-
-
 
 
 // Comedians routes (public)
@@ -95,7 +90,6 @@ Route::prefix('comedians')->group(function () {
     Route::match(['post', 'put'], '/{id}', [ComediansController::class, 'update']);
     Route::delete('/{id}', [ComediansController::class, 'destroy']);
 });
-
 
 
 // About routes (public)
@@ -119,8 +113,7 @@ Route::prefix('about')->group(function () {
 
 
 
-
-
+// Gallery routes (public)
 Route::prefix('gallery')->group(function () {
     Route::get('/', [GalleryController::class, 'index']);
     Route::post('', [GalleryController::class, 'store']);
@@ -129,4 +122,6 @@ Route::prefix('gallery')->group(function () {
     Route::patch('/{id}', [GalleryController::class, 'update']);
     Route::delete('/{id}', [GalleryController::class, 'destroy']);
 });
+
+
 

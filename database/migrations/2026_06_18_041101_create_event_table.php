@@ -15,6 +15,7 @@ return new class extends Migration {
             $table->unsignedBigInteger('user_id')->nullable();
             $table->unsignedBigInteger('comedians_id')->nullable();
             $table->string('title');
+            $table->string('badge')->nullable();
             $table->date('event_date');
             $table->datetime('start_time')->nullable()->change();
             $table->datetime('end_time')->nullable()->change();

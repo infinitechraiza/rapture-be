@@ -67,6 +67,14 @@ class Booking extends Model
         return $this->status === 'in_progress';
     }
 
+
+    public function bookings(): BelongsToMany
+    {
+        return $this->belongsToMany(Event::class, 'booking_event', 'booking_id', 'event_id')
+            ->withTimestamps();
+    }
+
+
     /**
      * Allow cancellation only if the appointment is more than 24 hours away
      * and is still in a cancellable state.

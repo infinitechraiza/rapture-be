@@ -25,11 +25,10 @@ class BookingController extends Controller
             $query->where(function ($q) use ($user) {
                 $q->where('user_id', auth()->id());
                 if ($user->email) {
-                    $q->orWhere('email', $user->email);
+                    $q->orWhere('email', $user->email)->whereIn('status', ['pending', 'confirmed', 'completed']);
                 }
             });
         } else {
-            // No authenticated user — don't leak everyone's bookings.
             return response()->json([
                 'success' => false,
                 'message' => 'Please log in to view your reservations.',
@@ -37,6 +36,26 @@ class BookingController extends Controller
         }
 
         $bookings = $query->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $bookings,
+        ]);
+    }
+    public function indexAll(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user || $user->user_role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized.',
+            ], 403);
+        }
+
+        $bookings = Booking::with('events.comedians')
+            ->orderBy('scheduled_at', 'desc')
+            ->get();
 
         return response()->json([
             'success' => true,
@@ -63,22 +82,7 @@ class BookingController extends Controller
      */
     public function store(Request $request)
     {
-       $scheduledAt = Carbon::parse($request->booking_date);
-
-        $user = User::where('email', $request->email)->first();
-        $booking = Booking::create([
-            'full_name' => $request->name,
-            // FIX: previously never set, so bookings had no owner and
-            // couldn't be scoped back to a user in index() above.
-            'user_id' => $user['id'] ?? null,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'date' => $scheduledAt->copy()->startOfDay(),
-            'scheduled_at' => $scheduledAt,
-            'status' => 'pending',
-            'notes' => $request->notes,
-        ]);
-         $eventIds = $request->input('event_ids', []);
+        $eventIds = $request->input('event_ids', []);
 
         if (is_array($eventIds) && !empty($eventIds)) {
             $alreadyBooked = Booking::forEvents($eventIds)
@@ -103,8 +107,8 @@ class BookingController extends Controller
         }
 
         $scheduledAt = Carbon::parse($request->booking_date);
-
         $user = User::where('email', $request->email)->first();
+
         $booking = Booking::create([
             'full_name' => $request->name,
             'user_id' => $user['id'] ?? null,
@@ -134,8 +138,15 @@ class BookingController extends Controller
      */
     public function updateStatus(Request $request, $id)
     {
+        if (!ctype_digit((string) $id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid booking id.',
+            ], 422);
+        }
+
         $validator = Validator::make($request->all(), [
-            'status' => 'required|in:pending,confirmed,in_progress,completed,cancelled',
+            'status' => 'required|in:pending,approved,confirmed,completed,cancelled',
         ]);
 
         if ($validator->fails()) {
@@ -213,4 +224,46 @@ class BookingController extends Controller
             ],
         ]);
     }
+
+
+    
+
+    /**
+     * GET /api/event/most-booked
+     * Returns the top N upcoming events ranked by number of active
+     * bookings — powers the homepage "Featured Show" cards.
+     */
+    public function mostBooked(Request $request)
+    {
+        try {
+            $limit = (int) $request->input('limit', 3);
+
+            $events = Event::query()
+                ->with('comedians')
+                ->withCount([
+                    'bookings' => function ($q) {
+                        $q->whereIn('status', ['pending', 'confirmed', 'completed']);
+                    }
+                ])
+                ->whereDate('event_date', '>=', now()->toDateString())
+                ->orderByDesc('bookings_count')
+                ->orderBy('event_date')
+                ->limit($limit)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $events,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Most-booked events failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch featured events.',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
+    }
+    
 }

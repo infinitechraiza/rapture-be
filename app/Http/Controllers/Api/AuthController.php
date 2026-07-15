@@ -379,6 +379,7 @@ class AuthController extends Controller
             // Create token (expiration is handled on frontend via cookie maxAge)
             $token = $user->createToken($tokenName)->plainTextToken;
 
+            $isProduction = app()->environment('production');
             return response()->json([
                 'success' => true,
                 'message' => 'Login successful',
@@ -402,8 +403,10 @@ class AuthController extends Controller
                     $rememberMe ? 43200 : 60,
                     '/',
                     null,
-                    true,
-                    true
+                    $isProduction,           // secure: only true in production (HTTPS)
+                    true,                    // httpOnly
+                    false,                   // raw
+                    $isProduction ? 'none' : 'lax'  // sameSite: 'none' needs secure+https; 'lax' works for http dev
                 );
 
         } catch (\Exception $e) {
@@ -413,6 +416,7 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'An error occurred during login.',
+                'debug' => config('app.debug') ? $e->getMessage() : null, // ← add this
             ], 500);
         }
     }
@@ -725,23 +729,23 @@ class AuthController extends Controller
     {
         try {
             $request->user()->currentAccessToken()->delete();
-    
+
             return response()->json([
                 'success' => true,
                 'message' => 'Logout successful'
             ])->cookie(
-                'auth_token',
-                '',
-                -1,     // negative minutes = expire immediately
-                '/',
-                null,
-                true,   // secure — must match the flags used when the cookie was set in login()
-                true    // httpOnly
-            );
-    
+                    'auth_token',
+                    '',
+                    -1,     // negative minutes = expire immediately
+                    '/',
+                    null,
+                    true,   // secure — must match the flags used when the cookie was set in login()
+                    true    // httpOnly
+                );
+
         } catch (\Exception $e) {
             Log::error('Logout error: ' . $e->getMessage());
-    
+
             return response()->json([
                 'success' => false,
                 'message' => 'An error occurred during logout.',
@@ -854,4 +858,164 @@ class AuthController extends Controller
             'message' => $exists ? 'Phone number already registered' : 'Phone number available'
         ]);
     }
+
+
+
+
+    /**
+     * Update the authenticated user's own profile info
+     * (name, email, phone, profile picture). Does NOT touch
+     * status or user_role — those stay admin-only via UserController.
+     */
+    public function updateProfile(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated',
+                ], 401);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'first_name' => ['sometimes', 'string', 'max:255', 'regex:/^[a-zA-Z\s]+$/'],
+                'last_name' => ['sometimes', 'string', 'max:255', 'regex:/^[a-zA-Z\s]+$/'],
+                'email' => ['sometimes', 'email', 'max:255', 'unique:users,email,' . $user->id],
+                'phone' => ['sometimes', 'string', 'regex:/^[0-9]{11}$/'],
+                'profile_url' => ['sometimes', 'nullable', 'string', 'max:255'],
+            ], [
+                'first_name.regex' => 'First name can only contain letters and spaces',
+                'last_name.regex' => 'Last name can only contain letters and spaces',
+                'email.unique' => 'This email address is already registered',
+                'phone.regex' => 'Phone number must be exactly 11 digits',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $validator->errors()->first(),
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $data = $validator->validated();
+
+            // Keep `name` in sync whenever either name part changes
+            if (isset($data['first_name']) || isset($data['last_name'])) {
+                $data['name'] = trim(
+                    ($data['first_name'] ?? $user->first_name) . ' ' . ($data['last_name'] ?? $user->last_name)
+                );
+            }
+
+            if (isset($data['email'])) {
+                $data['email'] = strtolower(trim($data['email']));
+            }
+
+            $user->update($data);
+            $user->refresh();
+
+            Log::info('Profile updated', ['user_id' => $user->id, 'fields' => array_keys($data)]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Profile updated successfully',
+                'data' => [
+                    'user' => [
+                        'id' => $user->id,
+                        'first_name' => $user->first_name,
+                        'last_name' => $user->last_name,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'phone' => $user->phone,
+                        'profile_url' => $user->profile_url,
+                        'user_role' => $user->user_role,
+                    ],
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Update profile error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update profile.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Change the authenticated user's password. Requires the current
+     * password for confirmation before allowing the change.
+     */
+    public function changePassword(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated',
+                ], 401);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'current_password' => ['required', 'string'],
+                'new_password' => [
+                    'required',
+                    'string',
+                    'confirmed',
+                    Password::min(8)->mixedCase()->numbers()->symbols(),
+                ],
+            ], [
+                'current_password.required' => 'Please enter your current password',
+                'new_password.required' => 'New password is required',
+                'new_password.confirmed' => 'Password confirmation does not match',
+                'new_password.min' => 'Password must be at least 8 characters',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $validator->errors()->first(),
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            if (!Hash::check($request->current_password, $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Current password is incorrect.',
+                ], 422);
+            }
+
+            if (Hash::check($request->new_password, $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'New password must be different from your current password.',
+                ], 422);
+            }
+
+            $user->update([
+                'password' => Hash::make($request->new_password),
+            ]);
+
+            Log::info('Password changed', ['user_id' => $user->id]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password changed successfully.',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Change password error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to change password.',
+            ], 500);
+        }
+    }
+
+
 }

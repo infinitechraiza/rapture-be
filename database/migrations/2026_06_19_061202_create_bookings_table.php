@@ -15,7 +15,7 @@ return new class extends Migration {
             $table->string('phone')->nullable();
             $table->dateTime('date');
             $table->dateTime('scheduled_at');
-            $table->enum('status', ['pending','confirmed','in_progress','completed','cancelled'])->default('pending');
+            $table->enum('status', ['pending','approved','confirmed','completed','cancelled'])->default('pending');
             $table->decimal('amount', 10, 2)->nullable();
             $table->text('notes')->nullable();
             $table->timestamps();

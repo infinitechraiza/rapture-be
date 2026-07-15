@@ -26,6 +26,15 @@ class EventController extends Controller
                             ->orWhere('description', 'like', "%{$request->search}%");
                     });
                 })
+                // NEW: calendar-view filter — restrict to a single year/month
+                ->when($request->filled('year') && $request->filled('month'), function ($query) use ($request) {
+                    $query->whereYear('event_date', $request->integer('year'))
+                        ->whereMonth('event_date', $request->integer('month'));
+                })
+                // NEW: explicit date-range filter, used when year/month aren't given
+                ->when($request->filled('start_date') && $request->filled('end_date'), function ($query) use ($request) {
+                    $query->whereBetween('event_date', [$request->input('start_date'), $request->input('end_date')]);
+                })
                 ->orderBy('event_date')
                 ->orderBy('start_time')
                 ->paginate($request->per_page ?? 15);
@@ -344,4 +353,45 @@ class EventController extends Controller
             ], 500);
         }
     }
+
+
+
+    /**
+     * GET /api/event/most-booked
+     * Returns the top N upcoming events ranked by number of active
+     * bookings — powers the homepage "Featured Show" cards.
+     */
+    public function mostBooked(Request $request)
+    {
+        try {
+            $limit = (int) $request->input('limit', 3);
+
+            $events = Event::query()
+                ->with('comedians')
+                ->withCount([
+                    'bookings' => function ($q) {
+                        $q->whereIn('status', ['pending', 'confirmed', 'in_progress']);
+                    }
+                ])
+                ->whereDate('event_date', '>=', now()->toDateString())
+                ->orderByDesc('bookings_count')
+                ->orderBy('event_date')
+                ->limit($limit)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $events,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Most-booked events failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch featured events.',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
+    }
+
 }

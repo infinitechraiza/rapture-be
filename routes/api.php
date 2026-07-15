@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\GalleryController;
 use App\Http\Controllers\Api\AboutValueController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\ComediansController;
 
 use Illuminate\Support\Facades\Route;
@@ -57,14 +58,19 @@ Route::prefix('users')->group(function () {
 
 // Make sure the event routes are inside this middleware group:
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/event', [EventController::class, 'store']);
-    Route::match(['post', 'patch'], '/event/{id}', [EventController::class, 'update']);
-    Route::delete('/event/{id}', [EventController::class, 'destroy']);
+    Route::get('/me', [AuthController::class, 'me']);
+    Route::put('/profile', [AuthController::class, 'updateProfile']);
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
 });
+
 
 // keep public if desired
 Route::get('/event', [EventController::class, 'index']);
-Route::get('/event/{id}', [EventController::class, 'show']);
+Route::get('event/most-booked', [EventController::class, 'mostBooked']);   // must come before {id}
+Route::get('event/{id}', [EventController::class, 'show']);
+Route::post('event', [EventController::class, 'store']);
+Route::put('event/{id}', [EventController::class, 'update']);
+Route::delete('event/{id}', [EventController::class, 'destroy']);
 
 // Bookings routes (public)
 Route::prefix('booking')->group(function () {
@@ -81,6 +87,8 @@ Route::prefix('booking')->middleware('auth:sanctum')->group(function () {
     Route::delete('/booking/{id}', [BookingController::class, 'cancel']);
 });
 
+
+Route::middleware('auth:sanctum')->get('/admin/bookings', [BookingController::class, 'indexAll']);
 
 // Comedians routes (public)
 Route::prefix('comedians')->group(function () {
@@ -123,5 +131,12 @@ Route::prefix('gallery')->group(function () {
     Route::delete('/{id}', [GalleryController::class, 'destroy']);
 });
 
+// Contact routes (public)
+Route::post('/contacts', [ContactController::class, 'store']);
 
-
+// Admin-only — list, view, and reply to messages
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/contacts', [ContactController::class, 'index']);
+    Route::get('/contacts/{id}', [ContactController::class, 'show']);
+    Route::post('/contacts/{id}/reply', [ContactController::class, 'reply']);
+});

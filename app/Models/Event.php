@@ -101,11 +101,9 @@ class Event extends Model
 
     public function bookings(): BelongsToMany
     {
-        return $this->belongsToMany(Event::class, 'booking_event', 'booking_id', 'event_id')
+        return $this->belongsToMany(Booking::class, 'booking_event', 'event_id', 'booking_id')
             ->withTimestamps();
     }
-
-
 
 
     protected $appends = ['image_url'];
